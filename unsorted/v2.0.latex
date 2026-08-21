@@ -1,0 +1,257 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[russian]{babel}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{amsmath}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\lstset{style=mystyle}
+
+\begin{document}
+
+\title{Детальный разбор Python-скрипта для работы с GigaChat API}
+\author{Анализ на основе документации и интернет-источников}
+\date{\today}
+\maketitle
+
+\begin{abstract}
+Данный документ представляет собой подробный анализ Python-скрипта, предназначенного для взаимодействия с API нейросети GigaChat от Сбера. В работе рассматриваются все компоненты кода: от импорта библиотек и настройки аутентификации до реализации механизма function calling и логирования. Анализ основан на официальной документации GigaChat SDK, руководствах для разработчиков Сбера и других доступных источниках.
+\end{abstract}
+
+\section{Введение}
+
+Представленный Python-скрипт является примером интеграции с GigaChat — мультимодальной нейросетью, разработанной Сбером. Код демонстрирует базовый цикл взаимодействия: отправка запроса пользователя, возможность вызова пользовательской функции (получение текущего времени) и сохранение истории диалога в файл формата Markdown. 
+
+В основе скрипта лежит использование официального Python SDK \texttt{gigachat}, который предоставляет удобный интерфейс для работы с REST API GigaChat .
+
+\section{Разбор кода по компонентам}
+
+\subsection{Импорт библиотек и загрузка переменных окружения}
+
+\begin{lstlisting}[language=Python]
+import os
+from dotenv import load_dotenv
+from gigachat import GigaChat
+from gigachat.models import Chat, Function, FunctionParameters
+from datetime import datetime
+
+load_dotenv()
+\end{lstlisting}
+
+\textbf{Назначение:}
+\begin{itemize}
+    \item \texttt{os}: используется для доступа к переменным окружения, в которых хранятся чувствительные данные, такие как ключи авторизации.
+    \item \texttt{dotenv}: загружает переменные из файла \texttt{.env} в переменные окружения системы. Это стандартная практика для управления конфигурацией .
+    \item \texttt{gigachat}: основной SDK для работы с GigaChat. Предоставляет классы и методы для отправки запросов и обработки ответов.
+    \item \texttt{datetime}: используется для получения текущего времени в пользовательской функции.
+\end{itemize}
+
+\textbf{Примечание по документации:} SDK \texttt{gigachat} требует Python версии от 3.8 до 3.13 и устанавливается командой \texttt{pip install gigachat} .
+
+\subsection{Функция \texttt{get\_client()}}
+
+\begin{lstlisting}[language=Python]
+def get_client():
+    return GigaChat(
+        base_url="https://api.giga.chat/v1",
+        credentials=os.getenv("APY_KEY"),
+        scope="GIGACHAT_API_PERS",
+        verify_ssl_certs=False
+    )
+\end{lstlisting}
+
+\textbf{Назначение:} Инициализация и возврат клиента GigaChat.
+
+\textbf{Анализ параметров:}
+\begin{itemize}
+    \item \texttt{base\_url}: Базовый адрес API. В коде используется \url{https://api.giga.chat/v1}, что соответствует документации для использования моделей в основном доступе . В некоторых источниках также упоминается \url{https://gigachat.devices.sberbank.ru/api/v1} .
+    \item \texttt{credentials}: Ключ авторизации, получаемый из переменной окружения \texttt{APY\_KEY} (вероятно, опечатка, должно быть \texttt{API\_KEY}). Это рекомендуемый способ аутентификации .
+    \item \texttt{scope}: Определяет версию API. \texttt{GIGACHAT\_API\_PERS} предназначена для физических лиц . Существуют также \texttt{GIGACHAT\_API\_B2B} и \texttt{GIGACHAT\_API\_CORP} для юридических лиц .
+    \item \texttt{verify\_ssl\_certs=False}: \textbf{Важный параметр}. Отключает проверку SSL-сертификатов. В документации настоятельно не рекомендуется использовать это в продакшене, так как это снижает безопасность. Для корректной работы с SSL необходимо установить корневой сертификат НУЦ Минцифры .
+\end{itemize}
+
+\subsection{Функция \texttt{get\_current\_time()}}
+
+\begin{lstlisting}[language=Python]
+def get_current_time():
+    return datetime.now().strftime("%H:%M:%S")
+\end{lstlisting}
+
+Простая функция-заглушка, которая возвращает текущее время в формате \texttt{ЧЧ:ММ:СС}. Она не имеет параметров и используется для демонстрации механизма вызова пользовательских функций.
+
+\subsection{Функция \texttt{get\_response()}: Сердце запроса}
+
+\begin{lstlisting}[language=Python]
+def get_response(client, prompt):
+    chat = Chat(
+        model="GigaChat-2",
+        messages=[
+            {"role": "system", "content": "Ты агент который может вызывать функции. Помогай тому кто тебя спрашивает"},
+            {"role": "user", "content": prompt}
+        ],
+        functions=[
+            Function(
+                name="get_current_time",
+                description="Получить текущее время",
+                parameters=FunctionParameters(
+                    type="object",
+                    properties={},
+                    required=[]
+                )
+            )
+        ],
+        function_call="auto"
+    )
+    return client.chat(chat)
+\end{lstlisting}
+
+Это ключевая функция скрипта, где формируется и отправляется запрос к модели.
+
+\textbf{Структура запроса:}
+\begin{enumerate}
+    \item \texttt{model="GigaChat-2"}: Указывает конкретную версию модели. Список доступных моделей можно получить методом \texttt{client.get\_models()} .
+    \item \texttt{messages}: Список сообщений, формирующих контекст диалога.
+    \begin{itemize}
+        \item \texttt{system}: Системный промпт, задающий роль и поведение модели (в данном случае "агент, который может вызывать функции") .
+        \item \texttt{user}: Непосредственный запрос пользователя.
+    \end{itemize}
+    \item \texttt{functions}: Массив с описанием пользовательских функций, доступных модели .
+    \begin{itemize}
+        \item \texttt{name}: Уникальное имя функции ("get\_current\_time").
+        \item \texttt{description}: Описание, помогающее модели понять, когда следует вызывать эту функцию .
+        \item \texttt{parameters}: JSON-схема параметров функции. Поскольку \texttt{get\_current\_time} не требует аргументов, \texttt{properties} пуст, а \texttt{required} - пустой список .
+    \end{itemize}
+    \item \texttt{function\_call="auto"}: Режим работы с функциями.
+    \begin{itemize}
+        \item \texttt{"auto"}: Модель самостоятельно решает, вызывать ли функцию, и если да, то какую. Это стандартный режим .
+        \item Альтернативы: \texttt{"none"} (отключить функции) или \texttt{\{"name": "..."\}} (принудительный вызов конкретной функции) .
+    \end{itemize}
+\end{enumerate}
+
+\textbf{Важно:} В ответе на такой запрос, если модель решит вызвать функцию, она вернет не текстовый ответ, а объект с полем \texttt{function\_call}, содержащим имя функции и сгенерированные аргументы (в данном случае пустые) .
+
+\subsection{Функция \texttt{handle\_function\_call()}}
+
+\begin{lstlisting}[language=Python]
+def handle_function_call(response):
+    if hasattr(response.choices[0].message, 'function_call') and response.choices[0].message.function_call:
+        func_name = response.choices[0].message.function_call.name
+        if func_name == "get_current_time":
+            return get_current_time()
+    return None
+\end{lstlisting}
+
+\textbf{Назначение:} Обработка ответа модели, проверка наличия запроса на вызов функции и его выполнение.
+
+\begin{enumerate}
+    \item Проверяет, существует ли у первого сообщения в ответе (\texttt{choices[0].message}) атрибут \texttt{function\_call} .
+    \item Если да, извлекает имя функции (\texttt{func\_name}).
+    \item Если имя совпадает с зарегистрированной функцией "get\_current\_time", вызывает её.
+    \item В противном случае (или если вызов не запрашивался) возвращает \texttt{None}.
+\end{enumerate}
+
+Этот шаг критически важен: модель лишь генерирует \textit{аргументы} для вызова, но сам вызов выполняет код разработчика .
+
+\subsection{Функция \texttt{save\_response()}}
+
+\begin{lstlisting}[language=Python]
+def save_response(response, model, function_result=None):
+    with open("answer.md", "a", encoding="utf-8") as f:
+        if function_result:
+            f.write(f"\n\nВам овтетил {model}: Сейчас {function_result}")
+        else:
+            f.write(f"\n\nВам овтетил {model}: \n{response.choices[0].message.content}")
+        f.write(f"\nПротрачено: {response.usage.total_tokens}")
+\end{lstlisting}
+
+\textbf{Назначение:} Логирование диалога в файл \texttt{answer.md} в формате Markdown.
+
+\begin{itemize}
+    \item Открывает файл в режиме добавления (\texttt{"a"}) с кодировкой UTF-8.
+    \item Если функция была вызвана (\texttt{function\_result} не \texttt{None}), записывает её результат.
+    \item Иначе записывает обычный текстовый ответ модели.
+    \item Всегда добавляет информацию о количестве потраченных токенов (\texttt{response.usage.total\_tokens}), что полезно для контроля затрат .
+\end{itemize}
+
+\subsection{Функция \texttt{main()}: Цикл взаимодействия}
+
+\begin{lstlisting}[language=Python]
+def main():
+    client = get_client()
+    model = "GigaChat-2"
+    
+    while True:
+        prompt = input("\nВведи запрос: ")
+        if prompt == "exit":
+            break
+            
+        response = get_response(client, prompt)
+        
+        function_result = handle_function_call(response)
+        
+        if function_result:
+            print(f"\n\nВам овтетил {model}: Сейчас {function_result}")
+        
+        print(f"\n\nВам овтетил {model}: {response.choices[0].message.content}")
+        
+        print(f"\nПротрачено: {response.usage.total_tokens}")
+        save_response(response, model, function_result)
+\end{lstlisting}
+
+Организует бесконечный цикл, в котором:
+\begin{enumerate}
+    \item Запрашивает у пользователя ввод.
+    \item Выходит из цикла при вводе "exit".
+    \item Получает ответ от модели.
+    \item Обрабатывает возможный вызов функции.
+    \item Выводит результат в консоль (как результат функции, так и сообщение модели).
+    \item Сохраняет результат в файл.
+\end{enumerate}
+
+\section{Заключение}
+
+Рассмотренный скрипт является полноценным примером использования GigaChat SDK, демонстрирующим ключевые возможности платформы:
+
+\begin{enumerate}
+    \item \textbf{Аутентификация и настройка клиента:} Использование переменных окружения и параметров подключения.
+    \item \textbf{Function Calling:} Механизм, позволяющий модели GigaChat инициировать выполнение внешнего кода, что критически важно для создания агентов и интеграции с внешними API .
+    \item \textbf{Управление диалогом:} Формирование системного и пользовательского промптов.
+    \item \textbf{Логирование:} Сохранение истории и статистики использования токенов.
+\end{enumerate}
+
+Несмотря на работоспособность, код содержит ряд моментов, требующих улучшения для использования в продакшене:
+\begin{itemize}
+    \item \textbf{Обработка ошибок:} Отсутствует обработка исключений (например, сетевых ошибок, ошибок API или невалидных аргументов функции) .
+    \item \textbf{SSL:} Использование \texttt{verify\_ssl\_certs=False} небезопасно; необходимо настроить корректную проверку сертификатов .
+    \item \textbf{Потоковая передача:} Для улучшения пользовательского опыта можно использовать стриминг токенов .
+    \item \textbf{Опечатка:} В выводах и логировании используется слово "овтетил" вместо "ответил".
+\end{itemize}
+
+В целом, скрипт является отличной отправной точкой для разработки более сложных решений на базе GigaChat.
+
+\end{document}
