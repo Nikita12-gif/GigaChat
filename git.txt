@@ -5,3 +5,4 @@ git branch -M main
 git remote add origin https://github.com/ваша ссылка с git
 git config --global user.email "you@example.com"
 git config --global user.name "Your Name"
+git clone https://github.com/Nikita12-gif/GigaChat.git
