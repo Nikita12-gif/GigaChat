@@ -21,3 +21,5 @@ pip install "NAMELIB" - установка библиотеки с назван�
 
 pip uninstall gigachat pydantic -y   
 pip install "gigachat<0.2" "pydantic<2"
+
+git clone https://github.com/Flowseal/zapret-discord-youtube
